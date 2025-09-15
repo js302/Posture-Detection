@@ -30,10 +30,17 @@ class PostureCameraManager:
 
         self.frame_callback = None
         self.posture_callback = None
+        self.person_detection_callback = None
 
         # Add frame skip for GUI updates to reduce flickering
         self.frame_skip_count = 0
         self.gui_update_interval = 2
+        
+        # Person detection tracking
+        self.person_detected_threshold = 0.3  # Confidence threshold for person detection
+        self.no_person_frames = 0  # Count consecutive frames without person
+        self.person_frames = 0  # Count consecutive frames with person
+        self.detection_stability_frames = 5  # Frames needed for stable detection
 
     def initialize_models(self):
         """Initialize MediaPipe pose detection models"""
@@ -64,6 +71,10 @@ class PostureCameraManager:
             print(f"Error initializing camera: {e}")
             return False
 
+    def set_person_detection_callback(self, callback: Callable[[bool], None]):
+        """Set callback for person presence detection"""
+        self.person_detection_callback = callback
+
     def set_frame_callback(self, callback: Callable[[np.ndarray], None]):
         """Set callback for processed frames"""
         self.frame_callback = callback
@@ -71,6 +82,41 @@ class PostureCameraManager:
     def set_posture_callback(self, callback: Callable[[PostureMetrics, Dict], None]):
         """Set callback for posture analysis results"""
         self.posture_callback = callback
+
+    def is_person_detected(self, keypoints: Optional[np.ndarray]) -> bool:
+        """Determine if a person is detected based on keypoints quality"""
+        if keypoints is None:
+            return False
+            
+        # Check if we have enough visible/confident keypoints for key body parts
+        key_points = [
+            self.pose_app.NOSE,
+            self.pose_app.LEFT_SHOULDER, 
+            self.pose_app.RIGHT_SHOULDER,
+            self.pose_app.LEFT_EAR,
+            self.pose_app.RIGHT_EAR
+        ]
+        
+        try:
+            visible_key_points = 0
+            for point_idx in key_points:
+                if point_idx < len(keypoints):
+                    # Check if point has reasonable confidence (assuming 3rd dimension is confidence)
+                    if len(keypoints[point_idx]) >= 3:
+                        confidence = keypoints[point_idx][2]
+                        if confidence > self.person_detected_threshold:
+                            visible_key_points += 1
+                    else:
+                        # If no confidence available, check if coordinates are reasonable
+                        x, y = keypoints[point_idx][:2]
+                        if x > 0 and y > 0:  # Basic validity check
+                            visible_key_points += 1
+                            
+            # Require at least 3 out of 5 key points to be visible
+            return visible_key_points >= 3
+            
+        except (IndexError, TypeError):
+            return False
 
     def process_frame(
         self, frame: np.ndarray
@@ -114,6 +160,10 @@ class PostureCameraManager:
             keypoints = self.extract_keypoints_from_raw_output(
                 batched_selected_landmarks
             )
+            
+            # Check person detection
+            person_detected = self.is_person_detected(keypoints)
+            self.update_person_detection_state(person_detected)
 
             if keypoints is not None:
                 # Analyze posture
@@ -126,11 +176,32 @@ class PostureCameraManager:
 
                 return cv2.cvtColor(annotated_frame, cv2.COLOR_RGB2BGR), posture_metrics
             else:
+                # No keypoints detected - still return the annotated frame
                 return cv2.cvtColor(annotated_frame, cv2.COLOR_RGB2BGR), None
 
         except Exception as e:
             print(f"Error processing frame: {e}")
             return frame, None
+
+    def update_person_detection_state(self, person_detected_current_frame: bool):
+        """Update person detection state with stability checking"""
+        if person_detected_current_frame:
+            self.person_frames += 1
+            self.no_person_frames = 0
+            
+            # Stable person detection
+            if (self.person_frames >= self.detection_stability_frames and 
+                self.person_detection_callback):
+                self.person_detection_callback(True)
+                
+        else:
+            self.no_person_frames += 1
+            self.person_frames = 0
+            
+            # Stable no-person detection
+            if (self.no_person_frames >= self.detection_stability_frames and 
+                self.person_detection_callback):
+                self.person_detection_callback(False)
 
     def extract_keypoints_from_raw_output(
         self, batched_landmarks

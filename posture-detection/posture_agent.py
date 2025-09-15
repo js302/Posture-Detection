@@ -10,6 +10,7 @@ from enum import Enum
 import psutil
 
 from posture_analyzer import PostureMetrics
+from pc_lock_manager import PCLockManager
 
 
 class PostureState(Enum):
@@ -65,6 +66,12 @@ class PostureAgent:
         self.require_ac_power = True
         self.manual_disable_until = None
 
+        # Auto-lock functionality
+        self.pc_lock_manager = PCLockManager()
+        self.auto_lock_enabled = False
+        self.person_absent_threshold = 10.0  # seconds
+        self.lock_timeout = 30.0  # seconds
+
         self.db_lock = threading.Lock()
         self.init_database()
 
@@ -114,6 +121,36 @@ class PostureAgent:
                 )
             """
             )
+
+    def set_auto_lock_enabled(self, enabled: bool):
+        """Enable or disable auto-lock functionality"""
+        self.auto_lock_enabled = enabled
+        self.pc_lock_manager.set_enabled(enabled)
+        print(f"Auto-lock {'enabled' if enabled else 'disabled'}")
+        
+    def set_person_absent_threshold(self, seconds: float):
+        """Set threshold for person absence detection"""
+        self.person_absent_threshold = max(1.0, seconds)
+        self.pc_lock_manager.set_person_absent_threshold(seconds)
+        
+    def set_lock_timeout(self, seconds: float):
+        """Set timeout for user acknowledgment before locking"""
+        self.lock_timeout = max(5.0, seconds)
+        self.pc_lock_manager.set_lock_timeout(seconds)
+        
+    def update_person_presence(self, person_detected: bool):
+        """Update person presence for auto-lock functionality"""
+        if self.auto_lock_enabled:
+            self.pc_lock_manager.update_person_presence(person_detected)
+            
+    def get_auto_lock_status(self) -> dict:
+        """Get auto-lock status information"""
+        return {
+            'enabled': self.auto_lock_enabled,
+            'person_absent_threshold': self.person_absent_threshold,
+            'lock_timeout': self.lock_timeout,
+            **self.pc_lock_manager.get_status()
+        }
 
     def should_be_active(self) -> bool:
         """Check if agent should be active based on conditions"""
