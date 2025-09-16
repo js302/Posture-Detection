@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, asdict
 from enum import Enum
 import psutil
+from logger_config import get_logger
 
 from posture_analyzer import PostureMetrics
 from pc_lock_manager import PCLockManager
@@ -43,6 +44,8 @@ class WorkSession:
 
 class PostureAgent:
     def __init__(self, db_path: str = None):
+        self.logger = get_logger("posture_agent")
+
         if db_path is None:
             data_dir = os.path.join(os.path.dirname(__file__), "data")
             os.makedirs(data_dir, exist_ok=True)
@@ -63,7 +66,7 @@ class PostureAgent:
 
         self.is_active = False
         self.work_hours = (9, 23)  # 9 AM to 11 PM - temporary
-        self.require_ac_power = True
+        self.require_ac_power = False  # Temporarily disabled for debugging
         self.manual_disable_until = None
 
         # Auto-lock functionality
@@ -127,29 +130,29 @@ class PostureAgent:
         self.auto_lock_enabled = enabled
         self.pc_lock_manager.set_enabled(enabled)
         print(f"Auto-lock {'enabled' if enabled else 'disabled'}")
-        
+
     def set_person_absent_threshold(self, seconds: float):
         """Set threshold for person absence detection"""
         self.person_absent_threshold = max(1.0, seconds)
         self.pc_lock_manager.set_person_absent_threshold(seconds)
-        
+
     def set_lock_timeout(self, seconds: float):
         """Set timeout for user acknowledgment before locking"""
         self.lock_timeout = max(5.0, seconds)
         self.pc_lock_manager.set_lock_timeout(seconds)
-        
+
     def update_person_presence(self, person_detected: bool):
         """Update person presence for auto-lock functionality"""
         if self.auto_lock_enabled:
             self.pc_lock_manager.update_person_presence(person_detected)
-            
+
     def get_auto_lock_status(self) -> dict:
         """Get auto-lock status information"""
         return {
-            'enabled': self.auto_lock_enabled,
-            'person_absent_threshold': self.person_absent_threshold,
-            'lock_timeout': self.lock_timeout,
-            **self.pc_lock_manager.get_status()
+            "enabled": self.auto_lock_enabled,
+            "person_absent_threshold": self.person_absent_threshold,
+            "lock_timeout": self.lock_timeout,
+            **self.pc_lock_manager.get_status(),
         }
 
     def should_be_active(self) -> bool:
@@ -188,6 +191,10 @@ class PostureAgent:
         print(
             f"Started new posture monitoring session at {datetime.now().strftime('%H:%M:%S')}"
         )
+
+        # Re-enable auto-lock when session starts if it was enabled
+        if self.auto_lock_enabled:
+            self.pc_lock_manager.set_enabled(True)
 
     def end_session(self):
         """End current work session and save to database"""
@@ -261,6 +268,10 @@ class PostureAgent:
         self.current_session = None
         self.is_active = False
 
+        # Disable auto-lock when session ends
+        if self.auto_lock_enabled:
+            self.pc_lock_manager.set_enabled(False)
+
     def process_posture_update(
         self, metrics: PostureMetrics, violations: Dict[str, bool]
     ) -> Optional[str]:
@@ -282,7 +293,7 @@ class PostureAgent:
         # Debug: Show what determines the state
         if is_bad_posture:
             active_violations = [k for k, v in violations.items() if v]
-            print(f"Debug: Bad posture detected with violations: {active_violations}")
+            # print(f"Debug: Bad posture detected with violations: {active_violations}")
 
         # Calculate duration in current state
         state_duration = current_time - self.last_state_change
@@ -325,9 +336,9 @@ class PostureAgent:
                 current_time - self.last_state_change
             )
 
-            print(
-                f"Debug: Current bad duration: {current_bad_duration:.1f}s, Accumulated: {self.bad_posture_accumulator:.1f}s, Last warning level: {self.last_warning_level}"
-            )
+            # print(
+            #     f"Debug: Current bad duration: {current_bad_duration:.1f}s, Accumulated: {self.bad_posture_accumulator:.1f}s, Last warning level: {self.last_warning_level}"
+            # )
 
             for i, threshold in enumerate(self.warning_thresholds):
                 if current_bad_duration >= threshold and i > self.last_warning_level:
@@ -347,9 +358,9 @@ class PostureAgent:
             if self.last_warning_level >= 0:
                 good_duration = current_time - self.last_state_change
                 if good_duration > 10:  # 10 seconds of good posture before reset
-                    print(
-                        f"Debug: Good posture for {good_duration:.1f}s, resetting warning level and reducing bad posture accumulator"
-                    )
+                    # print(
+                    #     f"Debug: Good posture for {good_duration:.1f}s, resetting warning level and reducing bad posture accumulator"
+                    # )
                     self.last_warning_level = -1
                     # Reduce accumulated bad posture time when maintaining good posture
                     self.bad_posture_accumulator = max(
@@ -394,7 +405,6 @@ class PostureAgent:
             battery = psutil.sensors_battery()
             if battery:
                 power_connected = battery.power_plugged
-                print(f"Debug: AC Power connected: {power_connected}")
                 return power_connected
             return True  # If no battery info, assume desktop/always powered
         except Exception as e:

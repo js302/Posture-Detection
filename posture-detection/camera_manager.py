@@ -5,6 +5,7 @@ import time
 from typing import Optional, Callable, Dict, Any
 import sys
 import os
+from logger_config import get_logger
 
 from qai_hub_models.models.mediapipe_pose.app import MediaPipePoseApp
 from qai_hub_models.models.mediapipe_pose.model import MediaPipePose
@@ -12,9 +13,9 @@ from posture_analyzer import PostureAnalyzer, PostureMetrics
 
 
 class PostureCameraManager:
-    def __init__(
-        self, camera_id: int = 0, fps: int = 15
-    ):
+    def __init__(self, camera_id: int = 0, fps: int = 15):
+        self.logger = get_logger("camera_manager")
+
         self.camera_id = camera_id
         self.fps = fps
         self.cap = None
@@ -35,9 +36,11 @@ class PostureCameraManager:
         # Add frame skip for GUI updates to reduce flickering
         self.frame_skip_count = 0
         self.gui_update_interval = 2
-        
+
         # Person detection tracking
-        self.person_detected_threshold = 0.3  # Confidence threshold for person detection
+        self.person_detected_threshold = (
+            0.2  # Lowered confidence threshold for person detection
+        )
         self.no_person_frames = 0  # Count consecutive frames without person
         self.person_frames = 0  # Count consecutive frames with person
         self.detection_stability_frames = 5  # Frames needed for stable detection
@@ -86,36 +89,59 @@ class PostureCameraManager:
     def is_person_detected(self, keypoints: Optional[np.ndarray]) -> bool:
         """Determine if a person is detected based on keypoints quality"""
         if keypoints is None:
+            self.logger.debug("Person detection: keypoints is None")
             return False
-            
-        # Check if we have enough visible/confident keypoints for key body parts
+
+        # Debug keypoints structure
+        if hasattr(self, "_debug_frame_count"):
+            self._debug_frame_count += 1
+        else:
+            self._debug_frame_count = 0
+
+        # Use more keypoints and be more lenient
         key_points = [
-            self.pose_app.NOSE,
-            self.pose_app.LEFT_SHOULDER, 
-            self.pose_app.RIGHT_SHOULDER,
-            self.pose_app.LEFT_EAR,
-            self.pose_app.RIGHT_EAR
+            0,  # Nose
+            11,  # Left Shoulder
+            12,  # Right Shoulder
+            7,  # Left Ear
+            8,  # Right Ear
+            13,  # Left Elbow
+            14,  # Right Elbow
+            15,  # Left Wrist
+            16,  # Right Wrist
         ]
-        
+
         try:
             visible_key_points = 0
+            total_checked = 0
+
             for point_idx in key_points:
                 if point_idx < len(keypoints):
+                    total_checked += 1
                     # Check if point has reasonable confidence (assuming 3rd dimension is confidence)
                     if len(keypoints[point_idx]) >= 3:
                         confidence = keypoints[point_idx][2]
-                        if confidence > self.person_detected_threshold:
+                        # Much lower threshold since MediaPipe confidence values are very low
+                        if confidence > -0.5:  # Accept almost any confidence above -0.5
                             visible_key_points += 1
                     else:
                         # If no confidence available, check if coordinates are reasonable
                         x, y = keypoints[point_idx][:2]
                         if x > 0 and y > 0:  # Basic validity check
                             visible_key_points += 1
-                            
-            # Require at least 3 out of 5 key points to be visible
-            return visible_key_points >= 3
-            
-        except (IndexError, TypeError):
+
+            # More lenient requirement: at least 2 out of available keypoints
+            # This should catch most cases where a person is present
+            detected = visible_key_points >= 2
+
+            self.logger.debug(
+                f"Person detection: {visible_key_points}/{total_checked} keypoints, detected={detected}"
+            )
+
+            return detected
+
+        except (IndexError, TypeError) as e:
+            self.logger.error(f"Person detection error: {e}")
             return False
 
     def process_frame(
@@ -160,7 +186,7 @@ class PostureCameraManager:
             keypoints = self.extract_keypoints_from_raw_output(
                 batched_selected_landmarks
             )
-            
+
             # Check person detection
             person_detected = self.is_person_detected(keypoints)
             self.update_person_detection_state(person_detected)
@@ -188,19 +214,29 @@ class PostureCameraManager:
         if person_detected_current_frame:
             self.person_frames += 1
             self.no_person_frames = 0
-            
+
             # Stable person detection
-            if (self.person_frames >= self.detection_stability_frames and 
-                self.person_detection_callback):
+            if (
+                self.person_frames >= self.detection_stability_frames
+                and self.person_detection_callback
+            ):
+                print(
+                    f"Person detection: STABLE PRESENT (frames: {self.person_frames})"
+                )
                 self.person_detection_callback(True)
-                
+
         else:
             self.no_person_frames += 1
             self.person_frames = 0
-            
+
             # Stable no-person detection
-            if (self.no_person_frames >= self.detection_stability_frames and 
-                self.person_detection_callback):
+            if (
+                self.no_person_frames >= self.detection_stability_frames
+                and self.person_detection_callback
+            ):
+                print(
+                    f"Person detection: STABLE ABSENT (frames: {self.no_person_frames})"
+                )
                 self.person_detection_callback(False)
 
     def extract_keypoints_from_raw_output(

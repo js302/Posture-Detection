@@ -6,6 +6,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import numpy as np
 from PIL import Image, ImageTk
+from logger_config import get_logger, set_log_level
 
 from camera_manager import PostureCameraManager
 from posture_agent import PostureAgent
@@ -14,6 +15,8 @@ from posture_analyzer import PostureMetrics
 
 class PostureMonitorGUI:
     def __init__(self):
+        self.logger = get_logger("main_gui")
+
         self.root = tk.Tk()
         self.root.title("Posture Monitor")
         self.root.geometry("1000x700")
@@ -29,7 +32,7 @@ class PostureMonitorGUI:
         self.last_frame_update = 0
         self.frame_update_interval = 100  # milliseconds
         self.pending_frame_update = False
-        
+
         # Auto-lock status variable for settings window
         self.autolock_status_var = tk.StringVar()
 
@@ -164,7 +167,9 @@ class PostureMonitorGUI:
         """Setup camera and agent callbacks"""
         self.camera_manager.set_frame_callback(self.update_video_feed)
         self.camera_manager.set_posture_callback(self.update_posture_info)
-        self.camera_manager.set_person_detection_callback(self.agent.update_person_presence)
+        self.camera_manager.set_person_detection_callback(
+            self.agent.update_person_presence
+        )
 
     def toggle_monitoring(self):
         """Start or stop posture monitoring"""
@@ -224,26 +229,32 @@ class PostureMonitorGUI:
         current_enabled = self.agent.auto_lock_enabled
         self.agent.set_auto_lock_enabled(not current_enabled)
         self.update_autolock_ui()
-        
+
         if self.agent.auto_lock_enabled:
             messagebox.showinfo(
-                "Auto-Lock Enabled", 
+                "Auto-Lock Enabled",
                 f"Auto-lock is now enabled.\n\n"
                 f"• PC will lock if no person detected for {self.agent.person_absent_threshold}s\n"
                 f"• You'll have {self.agent.lock_timeout}s to acknowledge your presence\n"
-                f"• Configure timers in Settings"
+                f"• Configure timers in Settings",
             )
         else:
-            messagebox.showinfo("Auto-Lock Disabled", "Auto-lock functionality is now disabled.")
+            messagebox.showinfo(
+                "Auto-Lock Disabled", "Auto-lock functionality is now disabled."
+            )
 
     def update_autolock_ui(self):
         """Update auto-lock UI elements"""
         if self.agent.auto_lock_enabled:
             self.autolock_button.config(text="Disable Auto-Lock")
-            self.autolock_status_label.config(text="Auto-Lock: Enabled", foreground="green")
+            self.autolock_status_label.config(
+                text="Auto-Lock: Enabled", foreground="green"
+            )
         else:
             self.autolock_button.config(text="Enable Auto-Lock")
-            self.autolock_status_label.config(text="Auto-Lock: Disabled", foreground="gray")
+            self.autolock_status_label.config(
+                text="Auto-Lock: Disabled", foreground="gray"
+            )
 
     def disable_temporarily(self):
         """Temporarily disable monitoring"""
@@ -509,9 +520,9 @@ Posture Score: {summary['posture_score']:.1f}%
         general_frame = ttk.Frame(notebook)
         notebook.add(general_frame, text="General")
 
-        ttk.Label(general_frame, text="General Settings", font=("Arial", 14, "bold")).pack(
-            pady=(10, 20)
-        )
+        ttk.Label(
+            general_frame, text="General Settings", font=("Arial", 14, "bold")
+        ).pack(pady=(10, 20))
 
         # Work hours setting
         hours_frame = ttk.Frame(general_frame)
@@ -547,16 +558,16 @@ Posture Score: {summary['posture_score']:.1f}%
         autolock_frame = ttk.Frame(notebook)
         notebook.add(autolock_frame, text="Auto-Lock")
 
-        ttk.Label(autolock_frame, text="Auto-Lock Settings", font=("Arial", 14, "bold")).pack(
-            pady=(10, 20)
-        )
+        ttk.Label(
+            autolock_frame, text="Auto-Lock Settings", font=("Arial", 14, "bold")
+        ).pack(pady=(10, 20))
 
         # Enable auto-lock
         auto_lock_var = tk.BooleanVar(value=self.agent.auto_lock_enabled)
         auto_lock_checkbox = ttk.Checkbutton(
-            autolock_frame, 
-            text="Enable automatic PC locking when person leaves desk", 
-            variable=auto_lock_var
+            autolock_frame,
+            text="Enable automatic PC locking when person leaves desk",
+            variable=auto_lock_var,
         )
         auto_lock_checkbox.pack(pady=10, anchor=tk.W, padx=20)
 
@@ -564,19 +575,21 @@ Posture Score: {summary['posture_score']:.1f}%
         absent_frame = ttk.Frame(autolock_frame)
         absent_frame.pack(pady=10, fill=tk.X, padx=20)
 
-        ttk.Label(absent_frame, text="Person absence detection threshold:").pack(anchor=tk.W)
-        
+        ttk.Label(absent_frame, text="Person absence detection threshold:").pack(
+            anchor=tk.W
+        )
+
         absent_input_frame = ttk.Frame(absent_frame)
         absent_input_frame.pack(anchor=tk.W, pady=(5, 0))
 
         absent_threshold = tk.DoubleVar(value=self.agent.person_absent_threshold)
         absent_spinbox = ttk.Spinbox(
-            absent_input_frame, 
-            from_=1.0, 
-            to=300.0, 
+            absent_input_frame,
+            from_=1.0,
+            to=300.0,
             increment=1.0,
-            textvariable=absent_threshold, 
-            width=8
+            textvariable=absent_threshold,
+            width=8,
         )
         absent_spinbox.pack(side=tk.LEFT)
         ttk.Label(absent_input_frame, text="seconds").pack(side=tk.LEFT, padx=(5, 0))
@@ -585,19 +598,21 @@ Posture Score: {summary['posture_score']:.1f}%
         timeout_frame = ttk.Frame(autolock_frame)
         timeout_frame.pack(pady=10, fill=tk.X, padx=20)
 
-        ttk.Label(timeout_frame, text="Acknowledgment timeout (before auto-lock):").pack(anchor=tk.W)
-        
+        ttk.Label(
+            timeout_frame, text="Acknowledgment timeout (before auto-lock):"
+        ).pack(anchor=tk.W)
+
         timeout_input_frame = ttk.Frame(timeout_frame)
         timeout_input_frame.pack(anchor=tk.W, pady=(5, 0))
 
         lock_timeout = tk.DoubleVar(value=self.agent.lock_timeout)
         timeout_spinbox = ttk.Spinbox(
-            timeout_input_frame, 
-            from_=5.0, 
-            to=300.0, 
+            timeout_input_frame,
+            from_=5.0,
+            to=300.0,
             increment=5.0,
-            textvariable=lock_timeout, 
-            width=8
+            textvariable=lock_timeout,
+            width=8,
         )
         timeout_spinbox.pack(side=tk.LEFT)
         ttk.Label(timeout_input_frame, text="seconds").pack(side=tk.LEFT, padx=(5, 0))
@@ -607,10 +622,54 @@ Posture Score: {summary['posture_score']:.1f}%
         status_frame.pack(pady=(20, 10), fill=tk.X, padx=20)
 
         self.autolock_status_var = tk.StringVar()
-        ttk.Label(status_frame, textvariable=self.autolock_status_var, justify=tk.LEFT).pack(anchor=tk.W)
-        
+        ttk.Label(
+            status_frame, textvariable=self.autolock_status_var, justify=tk.LEFT
+        ).pack(anchor=tk.W)
+
         # Update status initially
         self.update_autolock_status_display()
+
+        # Logging settings tab
+        logging_frame = ttk.Frame(notebook)
+        notebook.add(logging_frame, text="Logging")
+
+        ttk.Label(
+            logging_frame, text="Logging Settings", font=("Arial", 14, "bold")
+        ).pack(pady=(10, 20))
+
+        # Log level setting
+        log_level_frame = ttk.Frame(logging_frame)
+        log_level_frame.pack(pady=10, fill=tk.X, padx=20)
+
+        ttk.Label(log_level_frame, text="Log Level:").pack(anchor=tk.W)
+
+        log_level_var = tk.StringVar(value="INFO")
+        log_level_combo = ttk.Combobox(
+            log_level_frame,
+            textvariable=log_level_var,
+            values=["DEBUG", "INFO", "WARNING", "ERROR"],
+            state="readonly",
+            width=15,
+        )
+        log_level_combo.pack(anchor=tk.W, pady=(5, 0))
+
+        # Log level descriptions
+        description_frame = ttk.LabelFrame(
+            logging_frame, text="Log Level Descriptions", padding=10
+        )
+        description_frame.pack(pady=(20, 10), fill=tk.X, padx=20)
+
+        descriptions = [
+            "DEBUG: Detailed information for diagnosing problems",
+            "INFO: General information about system operation",
+            "WARNING: Something unexpected happened but the system continues",
+            "ERROR: A serious problem occurred",
+        ]
+
+        for desc in descriptions:
+            ttk.Label(
+                description_frame, text=f"• {desc}", wraplength=450, justify=tk.LEFT
+            ).pack(anchor=tk.W, pady=2)
 
         # Save button
         button_frame = ttk.Frame(settings_window)
@@ -619,12 +678,16 @@ Posture Score: {summary['posture_score']:.1f}%
         def save_settings():
             self.agent.work_hours = (start_hour.get(), end_hour.get())
             self.agent.require_ac_power = ac_power_var.get()
-            
+
             # Auto-lock settings
             self.agent.set_auto_lock_enabled(auto_lock_var.get())
             self.agent.set_person_absent_threshold(absent_threshold.get())
             self.agent.set_lock_timeout(lock_timeout.get())
-            
+
+            # Logging settings
+            set_log_level(log_level_var.get())
+            self.logger.info(f"Log level changed to {log_level_var.get()}")
+
             messagebox.showinfo("Settings", "Settings saved successfully!")
             settings_window.destroy()
 
@@ -634,20 +697,28 @@ Posture Score: {summary['posture_score']:.1f}%
 
         update_status()  # Start status updates
 
-        ttk.Button(button_frame, text="Save Settings", command=save_settings).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Cancel", command=settings_window.destroy).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Save Settings", command=save_settings).pack(
+            side=tk.LEFT, padx=5
+        )
+        ttk.Button(button_frame, text="Cancel", command=settings_window.destroy).pack(
+            side=tk.LEFT, padx=5
+        )
 
     def update_autolock_status_display(self):
         """Update the auto-lock status display"""
         try:
             status = self.agent.get_auto_lock_status()
-            status_text = f"Auto-lock: {'Enabled' if status['enabled'] else 'Disabled'}\n"
-            status_text += f"Person present: {'Yes' if status['person_present'] else 'No'}\n"
-            if status['timer_active']:
+            status_text = (
+                f"Auto-lock: {'Enabled' if status['enabled'] else 'Disabled'}\n"
+            )
+            status_text += (
+                f"Person present: {'Yes' if status['person_present'] else 'No'}\n"
+            )
+            if status["timer_active"]:
                 status_text += "⚠️ Absence timer active\n"
-            if status['notification_shown']:
+            if status["notification_shown"]:
                 status_text += "🔔 Notification shown\n"
-            
+
             self.autolock_status_var.set(status_text)
         except Exception as e:
             self.autolock_status_var.set(f"Status update error: {e}")
