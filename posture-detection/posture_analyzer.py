@@ -204,19 +204,19 @@ class PostureAnalyzer:
         # Debug output
         if any(violations.values()):
             active_violations = [k for k, v in violations.items() if v]
-            print(f"Debug: Violations detected: {active_violations}")
-            print(
-                f"  Neck: {metrics.neck_tilt_angle:.1f} > {self.thresholds.neck_tilt_threshold}"
-            )
-            print(
-                f"  Head: {metrics.head_pitch:.1f} > {self.thresholds.head_pitch_threshold}"
-            )
-            print(
-                f"  Torso: {metrics.torso_lean:.1f} > {self.thresholds.torso_lean_threshold}"
-            )
-            print(
-                f"  Shoulder: {metrics.shoulder_asymmetry:.1f} > {self.thresholds.shoulder_asymmetry_threshold}"
-            )
+            # print(f"Debug: Violations detected: {active_violations}")
+            # print(
+            #     f"  Neck: {metrics.neck_tilt_angle:.1f} > {self.thresholds.neck_tilt_threshold}"
+            # )
+            # print(
+            #     f"  Head: {metrics.head_pitch:.1f} > {self.thresholds.head_pitch_threshold}"
+            # )
+            # print(
+            #     f"  Torso: {metrics.torso_lean:.1f} > {self.thresholds.torso_lean_threshold}"
+            # )
+            # print(
+            #     f"  Shoulder: {metrics.shoulder_asymmetry:.1f} > {self.thresholds.shoulder_asymmetry_threshold}"
+            # )
 
         return violations
 

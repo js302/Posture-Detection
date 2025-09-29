@@ -7,6 +7,7 @@ Ever notice how your neck starts aching after a long day at the computer? This r
 - **Watches Your Posture**: Uses your webcam and MediaPipe to track how you're sitting in real-time
 - **Tracks Key Metrics**: Monitors neck tilt, head position, torso lean, and shoulder alignment
 - **Smart Notifications**: Only alerts you after you've been in poor posture for a while (no annoying false alarms)
+- **Auto-Lock Security**: Automatically locks your PC when you step away from your desk and wakes it when you return
 - **Respects Your Schedule**: Automatically runs during work hours and stops when you're on battery power
 - **Keeps Records**: Saves your posture data so you can see trends and improvements over time
 - **Learns From You**: Adapts based on whether you find the alerts helpful or not
@@ -19,6 +20,24 @@ The system has four main parts working together:
 2. **CameraManager**: Handles the webcam feed and runs pose detection
 3. **PostureAgent**: Decides when to alert you and keeps track of your session data
 4. **GUI Application**: The simple interface you interact with
+5. **Auto-Lock Manager**: Monitors when you're away and handles PC security automatically
+
+### The Auto-Lock Feature
+
+One of the coolest additions is the automatic PC locking when you leave your desk. Here's how it works:
+
+**When you step away:**
+- The system notices no one is at the desk after about 10 seconds
+- A friendly notification pops up asking "Are you still there?"
+- You get 30 seconds to click "I'm Here" if you're just leaning back or grabbing something
+- If there's no response, your PC locks automatically for security
+
+**When you come back:**
+- The camera detects you're back at your desk
+- Your screen wakes up automatically
+- The password screen appears so you can log right back in
+
+It's like having a helpful assistant that locks up when you forget to, but is smart enough not to lock you out when you're just stretching or thinking.
 
 ### What Gets Measured
 
@@ -74,11 +93,33 @@ python main_gui.py
 
 The interface will open showing your camera feed and current posture metrics. Click "Start Monitoring" to begin tracking your posture.
 
+### Setting Up Auto-Lock (Optional)
+
+Want your computer to lock automatically when you step away? Here's how to set it up:
+
+1. **Enable the feature**: Click the "Enable Auto-Lock" button in the main interface
+2. **Customize the timing**: Go to Settings → Auto-Lock tab to adjust:
+   - How long before it notices you're gone (default: 10 seconds)
+   - How long you have to respond before it locks (default: 30 seconds)
+3. **Test it out**: Try stepping away from your desk to see how it works
+
+The feature is disabled by default since everyone's workspace is different. Some people share computers, others have privacy concerns, and some work in open offices where the camera might pick up other people walking by.
+
 ## Customizing the Settings
 
 ### Work Hours
 
-By default, the system only runs from 9 AM to 11 PM (I work late sometimes!). You can change this in the GUI settings or by modifying the work hours in the code.
+By default, the system only runs from 9 AM to 11 PM (I work late sometimes!). You can change this in the GUI settings. The auto-lock feature respects these hours too - no point locking your computer at 2 AM when you're probably not at your desk anyway.
+
+### Auto-Lock Preferences
+
+Everyone's work style is different, so the auto-lock feature is fully customizable:
+
+- **Detection sensitivity**: How long before it thinks you've left (1-300 seconds)
+- **Response time**: How long you get to say "I'm still here" (5-300 seconds)  
+- **Quick disable**: Toggle the whole feature on/off with one click
+
+Pro tip: If you work in an open office or have pets that walk by the camera, you might want longer detection times to avoid false alarms.
 
 ### Alert Sensitivity
 
@@ -161,6 +202,13 @@ For those interested in the implementation:
 - Try changing the camera ID in the code (usually 0 for built-in cameras)
 - Make sure you granted camera permissions
 
+**Auto-lock acting weird?**
+
+- Make sure you're the only person the camera can see (it might detect others walking by)
+- Try adjusting the detection sensitivity in settings
+- Check that Windows allows the app to lock the computer (some corporate policies block this)
+- If it's not waking your screen when you return, check your display power settings
+
 **Poor performance?**
 
 - Close other heavy applications
@@ -180,8 +228,12 @@ Some features I'm thinking about adding:
 - **AI Coaching**: Use an LLM to give personalized posture advice
 - **Calendar Integration**: Automatic break reminders based on your schedule
 - **Mobile Notifications**: Get alerts on your phone when away from desk
+- **Smart Home Integration**: Dim lights or adjust desk height based on posture data
 - **Team Dashboard**: Workplace posture analytics (anonymized, of course)
 - **Wearable Support**: Integrate with fitness trackers for more complete data
+- **Machine Learning**: Learn your specific patterns to reduce false alarms
+
+The auto-lock feature could also get smarter - maybe learning your daily routine or integrating with your calendar to know when you're in meetings vs. just stepped away for coffee.
 
 ## Contributing
 
