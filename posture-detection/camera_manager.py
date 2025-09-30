@@ -36,6 +36,16 @@ class PostureCameraManager:
         # Add frame skip for GUI updates to reduce flickering
         self.frame_skip_count = 0
         self.gui_update_interval = 2
+        # Control whether to produce visual frames (saves CPU when GUI video is hidden)
+        self.visual_output_enabled = True
+
+        # Inference scheduling
+        self.inference_stride = 2  # run pose inference every N frames (>=1)
+        self._inference_counter = 0
+
+        # Throttle posture callbacks to reduce overhead (in seconds)
+        self.posture_update_interval = 0.25
+        self._last_posture_update_ts = 0.0
 
         # Person detection tracking
         self.person_detected_threshold = (
@@ -60,13 +70,31 @@ class PostureCameraManager:
     def initialize_camera(self):
         """Initialize camera capture"""
         try:
-            self.cap = cv2.VideoCapture(self.camera_id)
+            # Enable OpenCV optimizations
+            try:
+                cv2.setUseOptimized(True)
+            except Exception:
+                pass
+
+            # Prefer DirectShow backend on Windows for lower overhead
+            backend = cv2.CAP_DSHOW if os.name == "nt" else 0
+            self.cap = cv2.VideoCapture(self.camera_id, backend)
             if not self.cap.isOpened():
                 raise Exception(f"Could not open camera {self.camera_id}")
 
             self.cap.set(cv2.CAP_PROP_FPS, self.fps)
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            # Reduce latency and CPU if supported
+            try:
+                self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            except Exception:
+                pass
+            try:
+                fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+                self.cap.set(cv2.CAP_PROP_FOURCC, fourcc)
+            except Exception:
+                pass
 
             print(f"Camera {self.camera_id} initialized successfully")
             return True
@@ -85,6 +113,10 @@ class PostureCameraManager:
     def set_posture_callback(self, callback: Callable[[PostureMetrics, Dict], None]):
         """Set callback for posture analysis results"""
         self.posture_callback = callback
+
+    def set_visual_output_enabled(self, enabled: bool):
+        """Enable/disable generation of visual output frames for the GUI."""
+        self.visual_output_enabled = bool(enabled)
 
     def is_person_detected(self, keypoints: Optional[np.ndarray]) -> bool:
         """Determine if a person is detected based on keypoints quality"""
@@ -146,19 +178,20 @@ class PostureCameraManager:
 
     def process_frame(
         self, frame: np.ndarray
-    ) -> tuple[np.ndarray, Optional[PostureMetrics]]:
+    ) -> tuple[Optional[np.ndarray], Optional[PostureMetrics]]:
         """Process single frame for pose detection and posture analysis"""
         try:
             # Convert BGR to RGB for MediaPipe
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-            # Get pose landmarks with raw output
+            # Single model inference per frame (raw output contains landmarks)
             pose_results = self.pose_app.predict_landmarks_from_image(
                 rgb_frame, raw_output=True
             )
 
             if not pose_results or len(pose_results) < 4:
-                return frame, None
+                # No valid results; if visuals enabled, return original frame, else no frame
+                return (frame if self.visual_output_enabled else None), None
 
             # Extract components from raw output
             (
@@ -167,20 +200,9 @@ class PostureCameraManager:
                 batched_roi_4corners,
                 batched_selected_landmarks,
             ) = pose_results[:4]
-
-            # Get annotated image for display
-            annotated_results = self.pose_app.predict_landmarks_from_image(
-                rgb_frame, raw_output=False
-            )
-
-            if (
-                annotated_results
-                and len(annotated_results) > 0
-                and isinstance(annotated_results[0], np.ndarray)
-            ):
-                annotated_frame = annotated_results[0]
-            else:
-                annotated_frame = rgb_frame
+            
+            # Start with RGB frame; we will optionally overlay metrics
+            annotated_frame = rgb_frame
 
             # Extract keypoints for posture analysis
             keypoints = self.extract_keypoints_from_raw_output(
@@ -195,19 +217,30 @@ class PostureCameraManager:
                 # Analyze posture
                 posture_metrics = self.posture_analyzer.analyze_keypoints(keypoints)
 
-                # Add posture info to frame
-                annotated_frame = self.add_posture_overlay(
-                    annotated_frame, posture_metrics
-                )
-
-                return cv2.cvtColor(annotated_frame, cv2.COLOR_RGB2BGR), posture_metrics
+                # Optionally add posture info to frame for GUI display
+                if self.visual_output_enabled:
+                    annotated_frame = self.add_posture_overlay(
+                        annotated_frame, posture_metrics
+                    )
+                    return (
+                        cv2.cvtColor(annotated_frame, cv2.COLOR_RGB2BGR),
+                        posture_metrics,
+                    )
+                else:
+                    # Skip expensive color conversions when visuals are disabled
+                    return None, posture_metrics
             else:
-                # No keypoints detected - still return the annotated frame
-                return cv2.cvtColor(annotated_frame, cv2.COLOR_RGB2BGR), None
+                # No keypoints detected - optionally return the base frame
+                return (
+                    cv2.cvtColor(annotated_frame, cv2.COLOR_RGB2BGR)
+                    if self.visual_output_enabled
+                    else None,
+                    None,
+                )
 
         except Exception as e:
             print(f"Error processing frame: {e}")
-            return frame, None
+            return (frame if self.visual_output_enabled else None), None
 
     def update_person_detection_state(self, person_detected_current_frame: bool):
         """Update person detection state with stability checking"""
@@ -347,8 +380,15 @@ class PostureCameraManager:
                 print("Failed to capture frame")
                 continue
 
-            # Process frame
-            processed_frame, posture_metrics = self.process_frame(frame)
+            # Decide whether to run pose inference on this frame
+            do_inference = (self._inference_counter % max(1, self.inference_stride)) == 0
+            self._inference_counter += 1
+
+            if do_inference:
+                processed_frame, posture_metrics = self.process_frame(frame)
+            else:
+                processed_frame = frame if self.visual_output_enabled else None
+                posture_metrics = None
 
             # Update current frame and metrics
             with self.frame_lock:
@@ -363,13 +403,17 @@ class PostureCameraManager:
                 self.frame_callback
                 and self.frame_skip_count >= self.gui_update_interval
             ):
-                self.frame_callback(processed_frame)
+                if processed_frame is not None:
+                    self.frame_callback(processed_frame)
                 self.frame_skip_count = 0
 
-            # Always process posture data for accurate analysis
+            # Throttled posture callback
             if self.posture_callback and posture_metrics:
-                violations = self.posture_analyzer.is_bad_posture(posture_metrics)
-                self.posture_callback(posture_metrics, violations)
+                now_ts = time.time()
+                if (now_ts - self._last_posture_update_ts) >= self.posture_update_interval:
+                    violations = self.posture_analyzer.is_bad_posture(posture_metrics)
+                    self.posture_callback(posture_metrics, violations)
+                    self._last_posture_update_ts = now_ts
 
             # Maintain FPS
             elapsed = time.time() - start_time

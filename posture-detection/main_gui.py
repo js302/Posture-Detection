@@ -30,7 +30,7 @@ class PostureMonitorGUI:
 
         # Add frame update throttling
         self.last_frame_update = 0
-        self.frame_update_interval = 100  # milliseconds
+        self.frame_update_interval = 150  # milliseconds
         self.pending_frame_update = False
 
         # Auto-lock status variable for settings window
@@ -190,10 +190,20 @@ class PostureMonitorGUI:
             if self.video_label:
                 self.current_photo = None
                 self.video_label.config(image="", text="Video feed hidden")
+            # Disable visual output generation to save CPU
+            try:
+                self.camera_manager.set_visual_output_enabled(False)
+            except Exception:
+                pass
         else:
             # When re-enabled, the next incoming frame will populate the label
             if self.video_label:
                 self.video_label.config(text="Waiting for video…")
+            # Re-enable visual output generation
+            try:
+                self.camera_manager.set_visual_output_enabled(True)
+            except Exception:
+                pass
 
     def toggle_monitoring(self):
         """Start or stop posture monitoring"""
@@ -225,6 +235,11 @@ class PostureMonitorGUI:
 
             if self.camera_manager.start():
                 self.is_monitoring = True
+                # Align visual output with current UI state
+                try:
+                    self.camera_manager.set_visual_output_enabled(self.show_video_var.get())
+                except Exception:
+                    pass
                 self.start_button.config(text="Stop Monitoring")
                 self.status_label.config(text="Status: Running", foreground="green")
                 self.start_update_timer()
@@ -303,7 +318,7 @@ class PostureMonitorGUI:
         try:
             # Resize frame for display
             height, width = frame.shape[:2]
-            target_width = 480
+            target_width = 400
             target_height = int(height * target_width / width)
 
             resized_frame = cv2.resize(frame, (target_width, target_height))
