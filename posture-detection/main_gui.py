@@ -36,6 +36,9 @@ class PostureMonitorGUI:
         # Auto-lock status variable for settings window
         self.autolock_status_var = tk.StringVar()
 
+        # Video feed visibility
+        self.show_video_var = tk.BooleanVar(value=True)
+
         self.setup_ui()
         self.setup_callbacks()
 
@@ -86,6 +89,15 @@ class PostureMonitorGUI:
             control_frame, text="Auto-Lock: Disabled", foreground="gray"
         )
         self.autolock_status_label.pack(side=tk.LEFT, padx=(0, 10))
+
+        # Show/Hide video toggle
+        self.show_video_checkbox = ttk.Checkbutton(
+            control_frame,
+            text="Show Video Feed",
+            variable=self.show_video_var,
+            command=self.on_toggle_show_video,
+        )
+        self.show_video_checkbox.pack(side=tk.LEFT, padx=(0, 10))
 
         # Video feed
         video_frame = ttk.LabelFrame(main_frame, text="Camera Feed", padding="10")
@@ -170,6 +182,18 @@ class PostureMonitorGUI:
         self.camera_manager.set_person_detection_callback(
             self.agent.update_person_presence
         )
+
+    def on_toggle_show_video(self):
+        """Handle show/hide video feed toggle."""
+        if not self.show_video_var.get():
+            # Clear the current image and show placeholder text
+            if self.video_label:
+                self.current_photo = None
+                self.video_label.config(image="", text="Video feed hidden")
+        else:
+            # When re-enabled, the next incoming frame will populate the label
+            if self.video_label:
+                self.video_label.config(text="Waiting for video…")
 
     def toggle_monitoring(self):
         """Start or stop posture monitoring"""
@@ -266,6 +290,10 @@ class PostureMonitorGUI:
 
     def update_video_feed(self, frame: np.ndarray):
         """Update video feed in GUI with throttling to reduce flickering"""
+        # If video display is disabled, skip rendering entirely
+        if not self.show_video_var.get():
+            return
+
         current_time = time.time() * 1000  # Convert to milliseconds
 
         # Throttle updates to reduce flickering
